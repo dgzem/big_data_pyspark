@@ -1,0 +1,56 @@
+version: '3.8' # Version of dcoker compose file
+
+services: # definitions of containers
+  spark-master: # Container name
+    image: bitnami/spark:latest #image for container
+    container_name: spark-master #easy reference name
+    volumes:
+      - .:/workspace
+      #- ./data:/workspace/data
+    environment: #environment variables
+      - SPARK_MODE=master #type of node
+      - SPARK_MASTER_HOST=spark-master #host name of the node
+    ports:
+      - "9090:8080"  # Spark Web UI
+      - "7077:7077"
+    networks:
+      - spark-network # Connects Docker netwrok to spark-network so they can  communicate with each other
+
+  spark-worker: # Container name
+    image: bitnami/spark:latest #image of the container
+    container_name: spark-worker # container name for reference
+    volumes:
+      - .:/workspace
+      #- ./data:/workspace/data
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077 # Connects with master node
+    depends_on:
+      - spark-master # dependes on spark master to start
+    networks:
+      - spark-network # is part of spark netwrok
+
+  pyspark:
+    #image: bitnami/spark:latest
+    container_name: pyspark
+    build: .
+    user: root
+    volumes:
+      - .:/workspace
+      - ./data:/workspace/data
+    working_dir: /workspace
+    command: tail -f /dev/null
+    networks:
+     - spark-network
+    depends_on:
+      - spark-master
+    environment:
+      - SPARK_MODE=client
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - JAVA_HOME=/opt/bitnami/java
+      - PYSPARK_PYTHON=python3
+
+
+networks:
+  spark-network:
+    driver: bridge
