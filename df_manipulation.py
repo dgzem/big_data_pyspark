@@ -5,11 +5,11 @@
 # WHERE [X] filter + where
 # CASE WHEN [X]
 # ORDER BY [X]
-# COALESCE() / LOWER() / COUNT() / SPLIT_TEXT []
+# COALESCE(X) / LOWER(X) / COUNT(X) / SPLIT_TEXT [X]
 # APPLY FUNCTIONs []
 # CTES []
-# JOINS []
-# GROUPBY/HAVING []
+# JOINS [X]
+# GROUPBY/HAVING [X]
 # WINDOW FUNCTIONS [] ROW_NUMBER / RANK / DENSE RANK
 # ===================================
 from pyspark.sql import SparkSession, functions as F
@@ -76,15 +76,61 @@ df_inner_left_join = df_11.join(df_22,(col("df_11.Sentiment") == col("df_22.Sent
 df_inner_left_join.show()
 
 # pure left join -> LEFT JOIN COALESCE + CASE WHEN
-
+df_left_join = df_11.join(df_22,(col('df_11.Sentiment')==col('df_22.Sentiment')) & (col('df_11.Sentiment_factor') == col('df_22.Sentiment_factor').cast('double')),'left').select(
+    col('df_11.Sentiment'),
+    col('df_11.Sentiment_factor').alias('score'),
+    col('df_11.Expression'),
+    F.coalesce(col('df_22.Expression'),F.lit('Oh no')).alias('Expression_fixed')).withColumn('Expression_updated', F.when(col('Expression_fixed')=='No','Match')
+                                                                                            .when(col('Expression_fixed')=='Oh no','Not match')
+                                                                                            .otherwise('Undefined')).select("Sentiment",
+                                                                                                                            "score",
+                                                                                                                            "Expression",
+                                                                                                                            F.concat("Expression_fixed",F.lit(' - SP')).alias('Expression_fixed_concatenated'),
+                                                                                                                            F.upper("Expression_updated").alias("Expression_upper")).withColumn('State',F.split('Expression_fixed_concatenated','-').getItem(1)).alias('df_left_join')
+df_left_join.show()
 
 # cross join
+df_cp = df_left_join.select('Sentiment').alias('df_cp')
+df_cp_s = df_left_join.select('score','Expression').alias('df_cp_s')
+
+df_cp_final = df_cp.crossJoin(df_cp_s.select('Score')).alias('df_cp_final')
+
+df_cp_da = df_cp_final.join(df_left_join,(col('df_cp_final.Sentiment')==col('df_left_join.Sentiment')) & (col('df_cp_final.score')==col('df_left_join.score'))).select(
+    col('df_cp_final.Sentiment'),
+    col('df_cp_final.Score'),
+    col('df_left_join.score').alias('score_join')
+).withColumn('score_join', F.when(col('score_join').isNull()==True,0)
+             .otherwise(1)).groupBy(['Sentiment','score']).agg(F.count('*').alias('count'),
+                                                               F.concat_ws(', ',F.collect_list(col('score'))).alias('str_agg')
+                                                    
+             ).filter(col('score') > 0)
+
+df_cp_da.show()
+
 
 #df.show()
 
 
-
-
+#|Sentiment|score|Expression|Expression_fixed_concatenated|Expression_upper|State|
+#+---------+-----+----------+-----------------------------+----------------+-----+
+#| Positive|    1|       Yes|                      No - SP|           MATCH|   SP|
+#|  Neutral|    0|       Yes|                   Oh no - SP|       NOT MATCH|   SP|
+#| Negative|   -1|       Yes|                      No - SP|           MATCH|   SP|
+#+---------+-----+----------+-----------------------------+----------------+-----+
+#
+#+---------+-----+
+#|Sentiment|Score|
+#+---------+-----+
+#| Positive|    1|
+#| Positive|    0|
+#| Positive|   -1|
+#|  Neutral|    1|
+#|  Neutral|    0|
+#|  Neutral|   -1|
+#| Negative|    1|
+#| Negative|    0|
+#| Negative|   -1|
+#+---------+-----+
 
 
 

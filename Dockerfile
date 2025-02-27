@@ -3,8 +3,7 @@ FROM bitnami/spark:latest
 
 # Install Python dependencies (PySpark and others if needed)
 USER root
-RUN apt-get update && apt-get install -y python3-pip && \
-    pip3 install pyspark pandas
+RUN pip3 install pyspark pandas
 
 # Set working directory
 WORKDIR /workspace
