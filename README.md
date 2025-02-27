@@ -17,7 +17,6 @@ In here you will find the following files:
   * Data Sets;
   * RDDs;
 
----
 
 ## Data Frames Manipulations
 
