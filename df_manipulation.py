@@ -7,12 +7,12 @@
 # ORDER BY [X]
 # COALESCE(X) / LOWER(X) / COUNT(X) / SPLIT_TEXT [X]
 # APPLY FUNCTIONs []
-# CTES []
+# CTES [X]
 # JOINS [X]
 # GROUPBY/HAVING [X]
-# WINDOW FUNCTIONS [] ROW_NUMBER / RANK / DENSE RANK
+# WINDOW FUNCTIONS [X] ROW_NUMBER / RANK / DENSE RANK
 # ===================================
-from pyspark.sql import SparkSession, functions as F
+from pyspark.sql import SparkSession, functions as F, Window
 from pyspark.sql.functions import col
 
 spark = SparkSession.builder.master("spark://spark-master:7077").appName('dataFrameManipulation').getOrCreate()
@@ -36,7 +36,7 @@ df_polarity_mm = df.groupBy("Sentiment").agg(
     (F.max('Sentiment_Polarity') - F.min('Sentiment_Polarity')).alias('Sentiment_Polarity_Amplitude'),
     F.avg('Sentiment_Polarity').alias('Sentiment_Polarity_Avg')
 ).filter(col('Sentiment_Polarity_Avg') != 0)     # df.groupBy(col('Sentiment')).max().show() it will show just one
-df_polarity_mm.show()
+#df_polarity_mm.show()
 
 # CASE WHEN + GROUP BY TO DEDUPE
 df_factor_sentiment = df.select('Sentiment').withColumn("Sentiment_factor", F.when(col('Sentiment')=="Positive","1")
@@ -44,14 +44,14 @@ df_factor_sentiment = df.select('Sentiment').withColumn("Sentiment_factor", F.wh
                                                        .when(col('Sentiment')=="Negative","-1")
                                                        .otherwise('-999')
                                                        ).withColumn('Sentiment_factor',col('Sentiment_factor').cast('integer')).groupBy('Sentiment').agg(F.max('Sentiment_factor').alias('Sentiment_factor'))
-df_factor_sentiment.show()
+#df_factor_sentiment.show()
 
 # CASE WHEN + DISTINCT TO DEDUPE +  ORDER BY
 df_factor_sentiment_distict = df.select('Sentiment').withColumn("Sentiment_factor", F.when(col('Sentiment')=='Positive','1')
                                                                                            .when(col('Sentiment')=='Neutral','0.5')
                                                                                            .when(col('Sentiment')=='Negative','-1')
                                                                                            .otherwise('-999')).select("Sentiment","Sentiment_factor").distinct().withColumn('Sentiment_factor',col('Sentiment_factor')).orderBy(["Sentiment_factor"],ascending=[True])
-df_factor_sentiment_distict.show()
+#df_factor_sentiment_distict.show()
 
 # JOINs
 df1 = df_factor_sentiment.alias('df1')
@@ -63,7 +63,7 @@ df_inner_join = df1.join(df2, df1.Sentiment == df2.Sentiment,'inner').select(
     col('df2.Sentiment').alias('Sentiment_2'),
     col('df2.Sentiment_factor').cast('double').alias('Sentiment_factor_2')
 )
-df_inner_join.show()
+#df_inner_join.show()
 # left join as alternative to inner join
 df_11 = df1.withColumn('Expression', F.lit('Yes')).alias('df_11')
 df_22 = df2.withColumn('Expression', F.lit('No')).alias('df_22')
@@ -73,7 +73,7 @@ df_inner_left_join = df_11.join(df_22,(col("df_11.Sentiment") == col("df_22.Sent
     col('df_11.Expression').alias('Expression_1'),
     col('df_22.Expression').alias('Expression_2')
 ).filter(col('Expression_2').isNotNull()).orderBy(['Sentiment_factor'], ascending=[False])
-df_inner_left_join.show()
+#df_inner_left_join.show()
 
 # pure left join -> LEFT JOIN COALESCE + CASE WHEN
 df_left_join = df_11.join(df_22,(col('df_11.Sentiment')==col('df_22.Sentiment')) & (col('df_11.Sentiment_factor') == col('df_22.Sentiment_factor').cast('double')),'left').select(
@@ -87,7 +87,7 @@ df_left_join = df_11.join(df_22,(col('df_11.Sentiment')==col('df_22.Sentiment'))
                                                                                                                             "Expression",
                                                                                                                             F.concat("Expression_fixed",F.lit(' - SP')).alias('Expression_fixed_concatenated'),
                                                                                                                             F.upper("Expression_updated").alias("Expression_upper")).withColumn('State',F.split('Expression_fixed_concatenated','-').getItem(1)).alias('df_left_join')
-df_left_join.show()
+#df_left_join.show()
 
 # cross join
 df_cp = df_left_join.select('Sentiment').alias('df_cp')
@@ -105,32 +105,45 @@ df_cp_da = df_cp_final.join(df_left_join,(col('df_cp_final.Sentiment')==col('df_
                                                     
              ).filter(col('score') > 0)
 
-df_cp_da.show()
+#df_cp_da.show()
+
+# WINDOWS FUNCTION
+window_spec = Window.orderBy('Sentiment_Polarity').partitionBy('App')
+df_row_number_wc = df.withColumn('rn', F.row_number().over(window_spec)).filter(col('rn') == 1).show()
+df_wf = df.select('App',
+                   F.row_number().over(window_spec).alias('row_number'),
+                   F.rank().over(window_spec).alias('rank'),
+                   F.dense_rank().over(window_spec).alias('dense_rank'),
+                   F.when((col('row_number')==1) & (col('rank')==1) & (col('dense_rank')==1),'GOLD')
+                          .otherwise('-').alias('status')).filter(col('status') == 'GOLD').show()
+
+##df.show()
 
 
-#df.show()
-
-
-#|Sentiment|score|Expression|Expression_fixed_concatenated|Expression_upper|State|
-#+---------+-----+----------+-----------------------------+----------------+-----+
-#| Positive|    1|       Yes|                      No - SP|           MATCH|   SP|
-#|  Neutral|    0|       Yes|                   Oh no - SP|       NOT MATCH|   SP|
-#| Negative|   -1|       Yes|                      No - SP|           MATCH|   SP|
-#+---------+-----+----------+-----------------------------+----------------+-----+
-#
-#+---------+-----+
-#|Sentiment|Score|
-#+---------+-----+
-#| Positive|    1|
-#| Positive|    0|
-#| Positive|   -1|
-#|  Neutral|    1|
-#|  Neutral|    0|
-#|  Neutral|   -1|
-#| Negative|    1|
-#| Negative|    0|
-#| Negative|   -1|
-#+---------+-----+
+# +--------------------+--------------------+---------+-------------------+
+# |                 App|   Translated_Review|Sentiment| Sentiment_Polarity|
+# +--------------------+--------------------+---------+-------------------+
+# |10 Best Foods for...|This help eating ...| Positive|               0.25|
+# |10 Best Foods for...|Works great espec...| Positive|                0.4|
+# |10 Best Foods for...|        Best idea us| Positive|                1.0|
+# |10 Best Foods for...|            Best way| Positive|                1.0|
+# |10 Best Foods for...|             Amazing| Positive| 0.6000000000000001|
+# |"10 Best Foods fo...|                NULL|  Neutral|                0.0|
+# |10 Best Foods for...|It helpful site !...|  Neutral|                0.0|
+# |10 Best Foods for...|           good you.| Positive|                0.7|
+# |"10 Best Foods fo...|    5 stars given.""| Positive|                0.2|
+# |10 Best Foods for...|Greatest ever Com...| Positive|          0.9921875|
+# |10 Best Foods for...|Good health.........| Positive| 0.5499999999999999|
+# |10 Best Foods for...|Health It's impor...| Positive|               0.45|
+# |10 Best Foods for...|Very Useful in di...| Positive|0.29500000000000004|
+# |10 Best Foods for...|  One greatest apps.| Positive|                1.0|
+# |10 Best Foods for...|           good nice| Positive| 0.6499999999999999|
+# |10 Best Foods for...|Healthy Really he...| Positive|               0.35|
+# |10 Best Foods for...|          God health|  Neutral|                0.0|
+# |10 Best Foods for...|HEALTH SHOULD ALW...| Positive|            0.78125|
+# |10 Best Foods for...|An excellent A us...| Positive|               0.65|
+# |10 Best Foods for...|I found lot wealt...|  Neutral|                0.0|
+# +--------------------+--------------------+---------+-------------------+
 
 
 
