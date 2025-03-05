@@ -1,20 +1,17 @@
 # ===================================
 # DATAFRAME MANIPULATION - PYSPARK
-# SELECT [x]
-# FROM [x]
-# WHERE [X] filter + where
-# CASE WHEN [X]
-# ORDER BY [X]
-# COALESCE(X) / LOWER(X) / COUNT(X) / SPLIT_TEXT [X]
-# APPLY FUNCTIONs []
-# CTES [X]
-# JOINS [X]
-# GROUPBY/HAVING [X]
-# WINDOW FUNCTIONS [X] ROW_NUMBER / RANK / DENSE RANK
+# Selection & Filtering (SELECT, WHERE, DISTINCT) 
+# Aggregation & Grouping (GROUP BY, HAVING, AVG, MAX, MIN) 
+# Conditional Transformations (CASE WHEN) 
+# Sorting (ORDER BY) 
+# Joins (INNER JOIN, LEFT JOIN, CROSS JOIN) 
+# Window Functions (ROW_NUMBER, RANK, DENSE_RANK) 
+# String & Numeric Operations (COALESCE, LOWER, COUNT, SPLIT) 
 # ===================================
 from pyspark.sql import SparkSession, functions as F, Window
 from pyspark.sql.functions import col
 
+# Start Spark Session
 spark = SparkSession.builder.master("spark://spark-master:7077").appName('dataFrameManipulation').getOrCreate()
 spark.sparkContext.setLogLevel("ERROR")
 
@@ -26,7 +23,9 @@ distincts_apps = df.select('App').distinct()
 distincts_sentiment_list = list(df.select('Sentiment').distinct().toPandas()['Sentiment'])
 
 # FILTER
-df = df.filter(col("Sentiment_Polarity").contains('.')).select('App', 'Translated_Review', 'Sentiment', 'Sentiment_Polarity').filter(col('Sentiment_Polarity').rlike(r"^-?\d+(\.\d+)?$"))
+df = df.filter(col("Sentiment_Polarity").contains('.')).select(
+    'App', 'Translated_Review', 'Sentiment', 'Sentiment_Polarity').filter(
+        col('Sentiment_Polarity').rlike(r"^-?\d+(\.\d+)?$"))
 df = df.withColumn('Sentiment_Polarity',col('Sentiment_Polarity').cast('double')).filter(col('Sentiment_Polarity').isNotNull())
 
 # GROUP BY
@@ -43,14 +42,18 @@ df_factor_sentiment = df.select('Sentiment').withColumn("Sentiment_factor", F.wh
                                                        .when(col('Sentiment')== "Neutral","0")
                                                        .when(col('Sentiment')=="Negative","-1")
                                                        .otherwise('-999')
-                                                       ).withColumn('Sentiment_factor',col('Sentiment_factor').cast('integer')).groupBy('Sentiment').agg(F.max('Sentiment_factor').alias('Sentiment_factor'))
+                                                       ).withColumn('Sentiment_factor',
+                                                                    col('Sentiment_factor').cast('integer')).groupBy('Sentiment').agg(
+                                                                        F.max('Sentiment_factor').alias('Sentiment_factor'))
 #df_factor_sentiment.show()
 
 # CASE WHEN + DISTINCT TO DEDUPE +  ORDER BY
 df_factor_sentiment_distict = df.select('Sentiment').withColumn("Sentiment_factor", F.when(col('Sentiment')=='Positive','1')
                                                                                            .when(col('Sentiment')=='Neutral','0.5')
                                                                                            .when(col('Sentiment')=='Negative','-1')
-                                                                                           .otherwise('-999')).select("Sentiment","Sentiment_factor").distinct().withColumn('Sentiment_factor',col('Sentiment_factor')).orderBy(["Sentiment_factor"],ascending=[True])
+                                                                                           .otherwise('-999')).select("Sentiment","Sentiment_factor").distinct().withColumn(
+                                                                                               'Sentiment_factor',col('Sentiment_factor')).orderBy(
+                                                                                                   ["Sentiment_factor"],ascending=[True])
 #df_factor_sentiment_distict.show()
 
 # JOINs
@@ -116,42 +119,3 @@ df_wf = df.select('App',
                    F.dense_rank().over(window_spec).alias('dense_rank'),
                    F.when((col('row_number')==1) & (col('rank')==1) & (col('dense_rank')==1),'GOLD')
                           .otherwise('-').alias('status')).filter(col('status') == 'GOLD').show()
-
-##df.show()
-
-
-# +--------------------+--------------------+---------+-------------------+
-# |                 App|   Translated_Review|Sentiment| Sentiment_Polarity|
-# +--------------------+--------------------+---------+-------------------+
-# |10 Best Foods for...|This help eating ...| Positive|               0.25|
-# |10 Best Foods for...|Works great espec...| Positive|                0.4|
-# |10 Best Foods for...|        Best idea us| Positive|                1.0|
-# |10 Best Foods for...|            Best way| Positive|                1.0|
-# |10 Best Foods for...|             Amazing| Positive| 0.6000000000000001|
-# |"10 Best Foods fo...|                NULL|  Neutral|                0.0|
-# |10 Best Foods for...|It helpful site !...|  Neutral|                0.0|
-# |10 Best Foods for...|           good you.| Positive|                0.7|
-# |"10 Best Foods fo...|    5 stars given.""| Positive|                0.2|
-# |10 Best Foods for...|Greatest ever Com...| Positive|          0.9921875|
-# |10 Best Foods for...|Good health.........| Positive| 0.5499999999999999|
-# |10 Best Foods for...|Health It's impor...| Positive|               0.45|
-# |10 Best Foods for...|Very Useful in di...| Positive|0.29500000000000004|
-# |10 Best Foods for...|  One greatest apps.| Positive|                1.0|
-# |10 Best Foods for...|           good nice| Positive| 0.6499999999999999|
-# |10 Best Foods for...|Healthy Really he...| Positive|               0.35|
-# |10 Best Foods for...|          God health|  Neutral|                0.0|
-# |10 Best Foods for...|HEALTH SHOULD ALW...| Positive|            0.78125|
-# |10 Best Foods for...|An excellent A us...| Positive|               0.65|
-# |10 Best Foods for...|I found lot wealt...|  Neutral|                0.0|
-# +--------------------+--------------------+---------+-------------------+
-
-
-
-
-
-
-# python first_pyspark.py
-
-
-
-

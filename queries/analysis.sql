@@ -42,15 +42,9 @@ SELECT
     us.total_spent,
     us.spending_rank,
     plp.last_product_purchased,
-    ps.product_name AS most_popular_product,
     ps.total_orders,
     ps.total_revenue
 FROM user_spending us
 LEFT JOIN user_latest_purchase plp ON us.user_id = plp.user_id AND plp.rn = 1
-LEFT JOIN product_sales ps ON ps.product_id = (
-    SELECT product_id FROM orders
-    GROUP BY product_id
-    ORDER BY COUNT(order_id) DESC
-    LIMIT 1  -- Most ordered product
-)
+LEFT JOIN product_sales ps ON ps.name = plp.last_product_purchased 
 ORDER BY us.spending_rank;
